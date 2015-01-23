@@ -23,6 +23,7 @@
 #region
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using SharpDX;
 using Color = System.Drawing.Color;
@@ -83,6 +84,19 @@ namespace LeagueSharp.Common
             "xenzhaothrust3"
         };
 
+        // Champs whose auto attacks can't be cancelled
+        private static readonly string[] NoCancelChamps =
+        {
+            "Kalista"
+        };
+
+        // Champs and their spells that won't get cancelled when moving
+        private static readonly Dictionary<string, string[]> NoInterruptSpells = new Dictionary<string, string[]>()
+        {
+            { "Varus", new[] { "VarusQ" } },
+            { "Lucian", new[] { "LucianR" } }
+        };
+
         public static int LastAATick;
         public static bool Attack = true;
         public static bool DisableNextAttack;
@@ -100,7 +114,7 @@ namespace LeagueSharp.Common
             Player = ObjectManager.Player;
             Obj_AI_Base.OnProcessSpellCast += OnProcessSpell;
             GameObject.OnCreate += Obj_SpellMissile_OnCreate;
-            Obj_AI_Base.OnInstantStopAttack += ObjAiHeroOnOnInstantStopAttack;
+            Spellbook.OnStopCast += SpellbookOnStopCast;
         }
 
         private static void Obj_SpellMissile_OnCreate(GameObject sender, EventArgs args)
@@ -272,8 +286,9 @@ namespace LeagueSharp.Common
         {
             if (LastAATick <= Environment.TickCount)
             {
-                return (Environment.TickCount + Game.Ping / 2 >=
-                        LastAATick + Player.AttackCastDelay * 1000 + extraWindup) && Move;
+                return Move && NoCancelChamps.Contains(Player.ChampionName) ?
+                    (Environment.TickCount - LastAATick > 250) :
+                    (Environment.TickCount + Game.Ping / 2 >= LastAATick + Player.AttackCastDelay * 1000 + extraWindup);
             }
 
             return false;
@@ -398,9 +413,9 @@ namespace LeagueSharp.Common
             LastAATick = 0;
         }
 
-        private static void ObjAiHeroOnOnInstantStopAttack(Obj_AI_Base sender, GameObjectInstantStopAttackEventArgs args)
+        private static void SpellbookOnStopCast(Spellbook spellbook, SpellbookStopCastEventArgs args)
         {
-            if (sender.IsValid && sender.IsMe && (args.BitData & 1) == 0 && ((args.BitData >> 4) & 1) == 1)
+            if (spellbook.Owner.IsValid && spellbook.Owner.IsMe && args.DestroyMissile && args.StopAnimation)
             {
                 ResetAutoAttackTimer();
             }
@@ -616,7 +631,6 @@ namespace LeagueSharp.Common
             public AttackableUnit GetTarget()
             {
                 AttackableUnit result = null;
-                float[] r = { float.MaxValue };
 
                 if ((ActiveMode == OrbwalkingMode.Mixed || ActiveMode == OrbwalkingMode.LaneClear) &&
                     !_config.Item("PriorizeFarm").GetValue<bool>())
@@ -705,20 +719,14 @@ namespace LeagueSharp.Common
                 /*Jungle minions*/
                 if (ActiveMode == OrbwalkingMode.LaneClear || ActiveMode == OrbwalkingMode.Mixed)
                 {
-                    foreach (var mob in
-                        ObjectManager.Get<Obj_AI_Minion>()
-                            .Where(
-                                mob =>
-                                    mob.IsValidTarget() && InAutoAttackRange(mob) && mob.Team == GameObjectTeam.Neutral)
-                            .Where(mob => mob.MaxHealth >= r[0] || Math.Abs(r[0] - float.MaxValue) < float.Epsilon))
+                    result = ObjectManager.Get<Obj_AI_Minion>().Where(mob =>mob.IsValidTarget() && InAutoAttackRange(mob) && mob.Team == GameObjectTeam.Neutral).MaxOrDefault(mob => mob.MaxHealth);
+                    if (result != null)
                     {
-                        result = mob;
-                        r[0] = mob.MaxHealth;
+                        return result;
                     }
                 }
 
                 /*Lane Clear minions*/
-                r[0] = float.MaxValue;
                 if (ActiveMode == OrbwalkingMode.LaneClear)
                 {
                     if (!ShouldWait())
@@ -734,22 +742,20 @@ namespace LeagueSharp.Common
                             }
                         }
 
-                        foreach (var minion in
-                            from minion in
-                                ObjectManager.Get<Obj_AI_Minion>()
-                                    .Where(minion => minion.IsValidTarget() && InAutoAttackRange(minion))
+                        result = (from minion in
+                            ObjectManager.Get<Obj_AI_Minion>()
+                                .Where(minion => minion.IsValidTarget() && InAutoAttackRange(minion))
                             let predHealth =
                                 HealthPrediction.LaneClearHealthPrediction(
-                                    minion, (int) ((Player.AttackDelay * 1000) * LaneClearWaitTimeMod), FarmDelay)
+                                    minion, (int)((Player.AttackDelay * 1000) * LaneClearWaitTimeMod), FarmDelay)
                             where
                                 predHealth >= 2 * Player.GetAutoAttackDamage(minion) ||
                                 Math.Abs(predHealth - minion.Health) < float.Epsilon
-                            where minion.Health >= r[0] || Math.Abs(r[0] - float.MaxValue) < float.Epsilon
-                            select minion)
+                            select minion).MaxOrDefault(m => m.Health);
+
+                        if (result != null)
                         {
-                            result = minion;
-                            r[0] = minion.Health;
-                            _prevMinion = minion;
+                            _prevMinion = (Obj_AI_Minion)result;
                         }
                     }
                 }
@@ -766,10 +772,11 @@ namespace LeagueSharp.Common
                         return;
                     }
 
-                    //Prevent canceling important channeled spells like Miss Fortunes R.
+                    //Prevent canceling important channeled spells
                     if (Player.IsChannelingImportantSpell())
                     {
-                        return;
+                        if (!NoInterruptSpells.ContainsKey(Player.ChampionName) || !NoInterruptSpells[Player.ChampionName].Contains(Player.LastCastedSpellName()))
+                            return;
                     }
 
                     var target = GetTarget();

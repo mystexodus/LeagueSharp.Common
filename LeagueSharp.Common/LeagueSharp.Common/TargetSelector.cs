@@ -55,12 +55,12 @@ namespace LeagueSharp.Common
 
         public enum TargetingMode
         {
+            AutoPriority,
             LowHP,
             MostAD,
             MostAP,
             Closest,
             NearMouse,
-            AutoPriority,
             LessAttack,
             LessCast
         }
@@ -69,6 +69,7 @@ namespace LeagueSharp.Common
 
         #region Vars
 
+        public static TargetingMode Mode = TargetingMode.AutoPriority;
         private static Menu _configMenu;
         private static Obj_AI_Hero _selectedTargetObjAiHero;
 
@@ -90,11 +91,12 @@ namespace LeagueSharp.Common
 
         private static void GameOnOnWndProc(WndEventArgs args)
         {
-            if (args.Msg != (uint)WindowsMessages.WM_LBUTTONDOWN)
+            if (args.Msg != (uint) WindowsMessages.WM_LBUTTONDOWN)
             {
                 return;
             }
-            _selectedTargetObjAiHero = ObjectManager.Get<Obj_AI_Hero>()
+            _selectedTargetObjAiHero =
+                ObjectManager.Get<Obj_AI_Hero>()
                     .Where(hero => hero.IsValidTarget() && hero.Distance(Game.CursorPos, true) < 40000) // 200 * 200
                     .OrderBy(h => h.Distance(Game.CursorPos, true)).FirstOrDefault();
         }
@@ -167,7 +169,7 @@ namespace LeagueSharp.Common
             {
                 "Aatrox", "Darius", "Elise", "Evelynn", "Galio", "Gangplank", "Gragas", "Irelia", "Jax",
                 "Lee Sin", "Maokai", "Morgana", "Nocturne", "Pantheon", "Poppy", "Rengar", "Rumble", "Ryze", "Swain",
-                "Trundle", "Tryndamere", "Udyr", "Urgot", "Vi", "XinZhao"
+                "Trundle", "Tryndamere", "Udyr", "Urgot", "Vi", "XinZhao", "RekSai"
             };
 
             string[] p3 =
@@ -180,10 +182,10 @@ namespace LeagueSharp.Common
             string[] p4 =
             {
                 "Ahri", "Anivia", "Annie", "Ashe", "Brand", "Caitlyn", "Cassiopeia", "Corki", "Draven",
-                "Ezreal", "Graves", "Jinx", "Karma", "Karthus", "Katarina", "Kennen", "KogMaw", "LeBlanc", "Lucian",
-                "Lux", "Malzahar", "MasterYi", "MissFortune", "Orianna", "Quinn", "Sivir", "Syndra", "Talon", "Teemo",
-                "Tristana", "TwistedFate", "Twitch", "Varus", "Vayne", "Veigar", "VelKoz", "Viktor", "Xerath", "Zed",
-                "Ziggs"
+                "Ezreal", "Graves", "Jinx", "Kalista", "Karma", "Karthus", "Katarina", "Kennen", "KogMaw", "LeBlanc",
+                "Lucian", "Lux", "Malzahar", "MasterYi", "MissFortune", "Orianna", "Quinn", "Sivir", "Syndra", "Talon",
+                "Teemo", "Tristana", "TwistedFate", "Twitch", "Varus", "Vayne", "Veigar", "VelKoz", "Viktor", "Xerath",
+                "Zed", "Ziggs"
             };
 
             if (p1.Contains(championName))
@@ -205,7 +207,8 @@ namespace LeagueSharp.Common
         {
             _configMenu = config;
             config.AddItem(new MenuItem("FocusSelected", "Focus selected target").SetShared().SetValue(true));
-            config.AddItem(new MenuItem("ForceFocusSelected", "Only attack selected target").SetShared().SetValue(false));
+            config.AddItem(
+                new MenuItem("ForceFocusSelected", "Only attack selected target").SetShared().SetValue(false));
             config.AddItem(
                 new MenuItem("SelTColor", "Selected target color").SetShared().SetValue(new Circle(true, Color.Red)));
             config.AddItem(new MenuItem("Sep", "").SetShared());
@@ -231,12 +234,7 @@ namespace LeagueSharp.Common
             config.AddItem(autoPriorityItem);
             config.AddItem(
                 new MenuItem("TargetingMode", "Target Mode").SetShared()
-                    .SetValue(
-                        new StringList(
-                            new[]
-                            {
-                                "LowHP", "MostAD", "MostAP", "Closest", "NearMouse", "Priority", "LessAttack", "LessCast"
-                            }, 5)));
+                    .SetValue(new StringList(Enum.GetNames(typeof(TargetingMode)))));
         }
 
         private static void autoPriorityItem_ValueChanged(object sender, OnValueChangeEventArgs e)
@@ -253,9 +251,7 @@ namespace LeagueSharp.Common
             }
         }
 
-        public static bool IsInvulnerable(Obj_AI_Base target,
-            DamageType damageType,
-            bool ignoreShields = true)
+        public static bool IsInvulnerable(Obj_AI_Base target, DamageType damageType, bool ignoreShields = true)
         {
             // Tryndamere's Undying Rage (R)
             if (!damageType.Equals(DamageType.True) && target.HasBuff("Undying Rage") && target.Health <= 2f)
@@ -321,91 +317,101 @@ namespace LeagueSharp.Common
         public static Obj_AI_Hero GetTarget(float range,
             DamageType damageType,
             bool ignoreShield = true,
-            IEnumerable<Obj_AI_Hero> ignoredChamps = null)
+            IEnumerable<Obj_AI_Hero> ignoredChamps = null,
+            Vector3? rangeCheckFrom = null)
         {
-            return GetTarget(ObjectManager.Player, range, damageType, ignoreShield, ignoredChamps);
+            return GetTarget(ObjectManager.Player, range, damageType, ignoreShield, ignoredChamps, rangeCheckFrom);
         }
 
         private static bool IsValidTarget(Obj_AI_Base target,
             float range,
             DamageType damageType,
             bool ignoreShieldSpells = true,
-            IEnumerable<Obj_AI_Hero> ignoredChamps = null)
+            Vector3? rangeCheckFrom = null)
         {
-            return target.IsValidTarget(range <= 0 ? Orbwalking.GetRealAutoAttackRange(target) : range) &&
-                !IsInvulnerable(target, damageType, ignoreShieldSpells);
+            return target.IsValidTarget() &&
+                   target.Distance(rangeCheckFrom ?? ObjectManager.Player.ServerPosition, true) <
+                   Math.Pow(range <= 0 ? Orbwalking.GetRealAutoAttackRange(target) : range, 2) &&
+                   !IsInvulnerable(target, damageType, ignoreShieldSpells);
         }
 
         public static Obj_AI_Hero GetTarget(Obj_AI_Base champion,
             float range,
             DamageType type,
             bool ignoreShieldSpells = true,
-            IEnumerable<Obj_AI_Hero> ignoredChamps = null)
+            IEnumerable<Obj_AI_Hero> ignoredChamps = null,
+            Vector3? rangeCheckFrom = null)
         {
             try
             {
                 if (ignoredChamps == null)
+                {
                     ignoredChamps = new List<Obj_AI_Hero>();
+                }
 
-                var targetingMode = TargetingMode.AutoPriority;
-                var damageType = (Damage.DamageType)Enum.Parse(typeof(Damage.DamageType), type.ToString());
+                var damageType = (Damage.DamageType) Enum.Parse(typeof(Damage.DamageType), type.ToString());
 
                 if (IsValidTarget(
                     SelectedTarget, _configMenu.Item("ForceFocusSelected").GetValue<bool>() ? float.MaxValue : range,
-                    type, ignoreShieldSpells))
+                    type, ignoreShieldSpells, rangeCheckFrom))
                 {
                     return SelectedTarget;
                 }
 
-                if (_configMenu != null && _configMenu.Item("TargetingMode") != null)
+                if (_configMenu != null && _configMenu.Item("TargetingMode") != null &&
+                    Mode == TargetingMode.AutoPriority)
                 {
                     var menuItem = _configMenu.Item("TargetingMode").GetValue<StringList>();
-                    Enum.TryParse(menuItem.SList[menuItem.SelectedIndex], out targetingMode);
+                    Enum.TryParse(menuItem.SList[menuItem.SelectedIndex], out Mode);
                 }
 
                 var targets =
                     ObjectManager.Get<Obj_AI_Hero>()
-                        .Where(hero => !ignoredChamps.Any(ignored => ignored.NetworkId == hero.NetworkId) && IsValidTarget(hero, range, type, ignoreShieldSpells));
+                        .Where(
+                            hero =>
+                                ignoredChamps.All(ignored => ignored.NetworkId != hero.NetworkId) &&
+                                IsValidTarget(hero, range, type, ignoreShieldSpells, rangeCheckFrom));
 
-                switch (targetingMode)
+                switch (Mode)
                 {
                     case TargetingMode.LowHP:
-                        return targets.OrderBy(hero => hero.Health).FirstOrDefault();
+                        return targets.MinOrDefault(hero => hero.Health);
 
                     case TargetingMode.MostAD:
-                        return
-                            targets.OrderByDescending(hero => hero.BaseAttackDamage + hero.FlatPhysicalDamageMod)
-                                .FirstOrDefault();
+                        return targets.MaxOrDefault(hero => hero.BaseAttackDamage + hero.FlatPhysicalDamageMod);
 
                     case TargetingMode.MostAP:
-                        return
-                            targets.OrderByDescending(hero => hero.BaseAbilityDamage + hero.FlatMagicDamageMod)
-                                .FirstOrDefault();
+                        return targets.MaxOrDefault(hero => hero.BaseAbilityDamage + hero.FlatMagicDamageMod);
 
                     case TargetingMode.Closest:
-                        return targets.OrderBy(hero => champion.Distance(hero, true)).FirstOrDefault();
+                        return
+                            targets.MinOrDefault(
+                                hero =>
+                                    (rangeCheckFrom.HasValue ? rangeCheckFrom.Value : champion.ServerPosition).Distance(
+                                        hero.ServerPosition, true));
 
                     case TargetingMode.NearMouse:
                         return targets.FirstOrDefault(hero => hero.Distance(Game.CursorPos, true) < 22500); // 150 * 150
 
                     case TargetingMode.AutoPriority:
                         return
-                            targets.OrderByDescending(
+                            targets.MaxOrDefault(
                                 hero =>
-                                    champion.CalcDamage(hero, damageType, 100) / (1 + hero.Health) * GetPriority(hero))
-                                .FirstOrDefault();
+                                    champion.CalcDamage(hero, damageType, 100) / (1 + hero.Health) * GetPriority(hero));
 
                     case TargetingMode.LessAttack:
                         return
-                            targets.OrderBy(
-                                hero => hero.Health - champion.CalcDamage(hero, Damage.DamageType.Physical, hero.Health))
-                                .FirstOrDefault();
+                            targets.MaxOrDefault(
+                                hero =>
+                                    champion.CalcDamage(hero, Damage.DamageType.Physical, 100) / (1 + hero.Health) *
+                                    GetPriority(hero));
 
                     case TargetingMode.LessCast:
                         return
-                            targets.OrderBy(
-                                hero => hero.Health - champion.CalcDamage(hero, Damage.DamageType.Magical, hero.Health))
-                                .FirstOrDefault();
+                            targets.MaxOrDefault(
+                                hero =>
+                                    champion.CalcDamage(hero, Damage.DamageType.Magical, 100) / (1 + hero.Health) *
+                                    GetPriority(hero));
                 }
             }
             catch (Exception e)
@@ -417,5 +423,57 @@ namespace LeagueSharp.Common
         }
 
         #endregion
+    }
+
+    /// <summary>
+    ///     This TS attempts to always lock the same target, useful for people getting targets for each spell, or for champions
+    ///     that have to burst 1 target.
+    /// </summary>
+    public class LockedTargetSelector
+    {
+        private static Obj_AI_Hero _lastTarget;
+        private static TargetSelector.DamageType _lastDamageType;
+
+        public static Obj_AI_Hero GetTarget(float range,
+            TargetSelector.DamageType damageType,
+            bool ignoreShield = true,
+            IEnumerable<Obj_AI_Hero> ignoredChamps = null,
+            Vector3? rangeCheckFrom = null)
+        {
+            if (_lastTarget == null || !_lastTarget.IsValidTarget() || _lastDamageType != damageType)
+            {
+                var newTarget = TargetSelector.GetTarget(range, damageType, ignoreShield, ignoredChamps, rangeCheckFrom);
+
+                _lastTarget = newTarget;
+                _lastDamageType = damageType;
+
+                return newTarget;
+            }
+
+            if (_lastTarget.IsValidTarget(range) && damageType == _lastDamageType)
+            {
+                return _lastTarget;
+            }
+
+            var newTarget2 = TargetSelector.GetTarget(range, damageType, ignoreShield, ignoredChamps, rangeCheckFrom);
+
+            _lastTarget = newTarget2;
+            _lastDamageType = damageType;
+
+            return newTarget2;
+        }
+
+        /// <summary>
+        ///     Unlocks the currently locked target.
+        /// </summary>
+        public static void UnlockTarget()
+        {
+            _lastTarget = null;
+        }
+
+        public static void AddToMenu(Menu menu)
+        {
+            TargetSelector.AddToMenu(menu);
+        }
     }
 }

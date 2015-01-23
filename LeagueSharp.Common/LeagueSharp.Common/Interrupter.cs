@@ -30,9 +30,7 @@ using System.Linq;
 
 namespace LeagueSharp.Common
 {
-    public delegate void OnPosibleToInterruptH(Obj_AI_Base unit, InterruptableSpell spell);
-
-    public delegate void OnPossibleToInterruptH(Obj_AI_Base unit, InterruptableSpell spell);
+    public delegate void OnPossibleToInterruptH(Obj_AI_Hero unit, InterruptableSpell spell);
 
     public enum InterruptableDangerLevel
     {
@@ -343,7 +341,7 @@ namespace LeagueSharp.Common
 
         public static event OnPossibleToInterruptH OnPossibleToInterrupt;
 
-        private static void FireOnInterruptable(Obj_AI_Base unit, InterruptableSpell spell)
+        private static void FireOnInterruptable(Obj_AI_Hero unit, InterruptableSpell spell)
         {
             if (OnPossibleToInterrupt != null)
             {
@@ -355,16 +353,15 @@ namespace LeagueSharp.Common
         {
             foreach (var enemy in ObjectManager.Get<Obj_AI_Hero>().Where(e => e.IsValidTarget()))
             {
-                var enemy1 = enemy;
                 foreach (var spell in
                     Spells.Where(
                         spell =>
-                            (enemy1.LastCastedspell() != null &&
+                            (enemy.LastCastedspell() != null &&
                              String.Equals(
-                                 enemy1.LastCastedspell().Name, spell.SpellName,
+                                 enemy.LastCastedspell().Name, spell.SpellName,
                                  StringComparison.CurrentCultureIgnoreCase) &&
-                             Environment.TickCount - enemy1.LastCastedSpellT() < 350 + spell.ExtraDuration) ||
-                            (spell.BuffName != null && enemy1.HasBuff(spell.BuffName, true))))
+                             Environment.TickCount - enemy.LastCastedSpellT() < 350 + spell.ExtraDuration) ||
+                            (spell.BuffName != null && enemy.HasBuff(spell.BuffName, true))))
                 {
                     FireOnInterruptable(enemy, spell);
                 }
@@ -374,18 +371,18 @@ namespace LeagueSharp.Common
         public static bool IsChannelingImportantSpell(this Obj_AI_Hero unit)
         {
             return
-                Spells.Where(spell => spell.ChampionName == unit.ChampionName)
-                    .Any(
-                        spell =>
-                            (unit.LastCastedspell() != null &&
-                             String.Equals(
-                                 unit.LastCastedspell().Name, spell.SpellName, StringComparison.CurrentCultureIgnoreCase) &&
-                             Environment.TickCount - unit.LastCastedSpellT() < 350 + spell.ExtraDuration) ||
-                            (spell.BuffName != null && unit.HasBuff(spell.BuffName, true)) ||
-                            (ObjectManager.Player.NetworkId == unit.NetworkId &&
-                             LastCastedSpell.LastCastPacketSent != null &&
-                             LastCastedSpell.LastCastPacketSent.Slot == spell.Slot &&
-                             Environment.TickCount - LastCastedSpell.LastCastPacketSent.Tick < 150 + Game.Ping));
+                Spells.Any(
+                    spell =>
+                        spell.ChampionName == unit.ChampionName &&
+                        ((unit.LastCastedspell() != null &&
+                            String.Equals(
+                                unit.LastCastedspell().Name, spell.SpellName, StringComparison.CurrentCultureIgnoreCase) &&
+                            Environment.TickCount - unit.LastCastedSpellT() < 350 + spell.ExtraDuration) ||
+                        (spell.BuffName != null && unit.HasBuff(spell.BuffName, true)) ||
+                        (unit.IsMe &&
+                            LastCastedSpell.LastCastPacketSent != null &&
+                            LastCastedSpell.LastCastPacketSent.Slot == spell.Slot &&
+                            Environment.TickCount - LastCastedSpell.LastCastPacketSent.Tick < 150 + Game.Ping)));
         }
     }
 }

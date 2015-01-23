@@ -88,7 +88,7 @@ namespace LeagueSharp.Common
             p = new PassiveDamage
             {
                 ChampionName = "Aatrox",
-                IsActive = (source, target) => (source.HasBuff("aatroxwpower") && source.HasBuff("aatroxwonhpowerbuff")),
+                IsActive = (source, target) => (source.HasBuff("AatroxWPower") && source.HasBuff("AatroxWONHPowerBuff")),
                 GetDamage = (source, target) => ((float) source.GetSpellDamage(target, SpellSlot.W)),
             };
             AttackPassives.Add(p);
@@ -3553,8 +3553,8 @@ namespace LeagueSharp.Common
                         Damage =
                             (source, target, level) =>
                                 new double[] { 10, 30, 50, 70, 90 }[level] +
-                                new double[] { 40, 45, 50, 55, 60 }[level] *
-                                (source.BaseAttackDamage + source.FlatPhysicalDamageMod)
+                                ((source.BaseAttackDamage + source.FlatPhysicalDamageMod) / 100) *
+                                new double[] { 40, 45, 50, 55, 60 }[level]
                     },
                     //W
                     new DamageSpell
@@ -4000,7 +4000,7 @@ namespace LeagueSharp.Common
                         DamageType = DamageType.Magical,
                         Damage =
                             (source, target, level) =>
-                                new double[] { 40, 80, 120, 160, 200 }[level] + 0.5 * source.FlatMagicDamageMod
+                                new double[] { 40, 80, 120, 160, 200 }[level] + 0.4 * source.FlatMagicDamageMod
                     },
                     //R
                     new DamageSpell
@@ -4087,7 +4087,7 @@ namespace LeagueSharp.Common
                         DamageType = DamageType.Magical,
                         Damage =
                             (source, target, level) =>
-                                (new double[] { 70, 110, 150, 190, 230 }[level] + 0.6 * source.FlatMagicDamageMod) *
+                                (new double[] { 50, 95, 140, 185, 230 }[level] + 0.6 * source.FlatMagicDamageMod) *
                                 ((level == 5 && target is Obj_AI_Hero) ? 1.15 : 1)
                     },
                     //W
@@ -5168,9 +5168,28 @@ namespace LeagueSharp.Common
 
             if (summonerSpell == SummonerSpell.Smite)
             {
+                if (target is Obj_AI_Hero)
+                {
+                    var chillingSmite =
+                        source.Spellbook.Spells.FirstOrDefault(h => h.Name.Equals("s5_summonersmiteplayerganker"));
+                    var challengingSmite =
+                        source.Spellbook.Spells.FirstOrDefault(h => h.Name.Equals("s5_summonersmiteduel"));
+
+                    if (chillingSmite != null)
+                    {
+                        return 20 + 8 * source.Level;
+                    }
+
+                    if (challengingSmite != null)
+
+                    {
+                        return 54 + 6 * source.Level;
+                    }
+            }
+
                 return
                     new double[]
-                    { 390, 410, 430, 450, 480, 510, 540, 570, 600, 640, 680, 720, 760, 800, 850, 900, 950, 1000 }[
+                    {390, 410, 430, 450, 480, 510, 540, 570, 600, 640, 680, 720, 760, 800, 850, 900, 950, 1000}[
                         source.Level - 1];
             }
 

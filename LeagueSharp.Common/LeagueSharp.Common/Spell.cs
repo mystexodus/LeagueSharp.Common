@@ -25,7 +25,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using LeagueSharp.Network.Packets;
 using SharpDX;
 
 #endregion
@@ -55,10 +54,13 @@ namespace LeagueSharp.Common
         private Vector3 _rangeCheckFrom;
         private float _width;
 
-        public Spell(SpellSlot slot, float range = float.MaxValue)
+        public Spell(SpellSlot slot,
+            float range = float.MaxValue,
+            TargetSelector.DamageType damageType = TargetSelector.DamageType.Physical)
         {
             Slot = slot;
             Range = range;
+            DamageType = damageType;
 
             // Default values
             MinHitChance = HitChance.High;
@@ -78,6 +80,7 @@ namespace LeagueSharp.Common
         public SpellSlot Slot { get; set; }
         public float Speed { get; set; }
         public SkillshotType Type { get; set; }
+        public TargetSelector.DamageType DamageType { get; set; }
 
         public float Width
         {
@@ -191,8 +194,8 @@ namespace LeagueSharp.Common
             _chargedCastedT = 0;
 
             Obj_AI_Base.OnProcessSpellCast += Obj_AI_Hero_OnProcessSpellCast;
-            Game.OnGameSendPacket += Game_OnGameSendPacket;
-            Spellbook.OnCastSpell += Spellbook_OnCastSpell;
+            Spellbook.OnUpdateChargedSpell += Spellbook_OnUpdateChargedSpell;
+            Spellbook.OnCastSpell += SpellbookOnCastSpell;
         }
 
         /// <summary>
@@ -218,30 +221,22 @@ namespace LeagueSharp.Common
                 _chargedReqSentT = Environment.TickCount;
             }
         }
-
-        private void Game_OnGameSendPacket(GamePacketEventArgs args)
+        
+        void Spellbook_OnUpdateChargedSpell(Spellbook sender, SpellbookUpdateChargedSpellEventArgs args)
         {
-            if (args.GetPacketId() == Network.Packets.Packet.GetPacketId<PKT_ChargedSpell>() &&
-                Environment.TickCount - _chargedReqSentT < 3000)
+            if (sender.Owner.IsMe && Environment.TickCount - _chargedReqSentT < 3000)
             {
-                var chargedData = new PKT_ChargedSpell();
-                chargedData.Decode(args.PacketData);
-
-                if (chargedData.NetworkId != ObjectManager.Player.NetworkId)
-                {
-                    return;
-                }
-
                 args.Process = false;
             }
         }
 
-        private void Spellbook_OnCastSpell(GameObject sender, SpellbookCastSpellEventArgs args)
+        private void SpellbookOnCastSpell(Spellbook spellbook, SpellbookCastSpellEventArgs args)
         {
             if (args.Slot != Slot)
             {
                 return;
             }
+
             if ((Environment.TickCount - _chargedReqSentT > 500))
             {
                 if (IsCharging)
@@ -385,7 +380,7 @@ namespace LeagueSharp.Common
             {
                 if (IsCharging)
                 {
-                    ShootChargedSpell(prediction.CastPosition);
+                    ShootChargedSpell(Slot, prediction.CastPosition);
                 }
                 else
                 {
@@ -488,7 +483,7 @@ namespace LeagueSharp.Common
             {
                 if (IsCharging)
                 {
-                    ShootChargedSpell(position);
+                    ShootChargedSpell(Slot, position);
                 }
                 else
                 {
@@ -506,16 +501,10 @@ namespace LeagueSharp.Common
             return false;
         }
 
-        private static void ShootChargedSpell(Vector3 position)
+        private static void ShootChargedSpell(SpellSlot slot, Vector3 position, bool releaseCast = true)
         {
-            new PKT_ChargedSpell
-            {
-                NetworkId = ObjectManager.Player.NetworkId,
-                SpellSlot = (byte) SpellSlot.Q,
-                TargetPosition = position,
-                Unknown1 = true,
-                Unknown2 = false
-            }.Encode().SendAsPacket();
+            ObjectManager.Player.Spellbook.CastSpell(slot, position, false);
+            ObjectManager.Player.Spellbook.UpdateChargedSpell(slot, position, releaseCast, false);
         }
 
         /// <summary>
@@ -665,21 +654,6 @@ namespace LeagueSharp.Common
         }
 
         /// <summary>
-        ///     Returns if the point is in range of the spell.
-        /// </summary>
-        [Obsolete("Use IsInRange(Vector3 obj, float range)", false)]
-        public bool InRange(Vector3 point, float r = -1)
-        {
-            return IsInRange(point, r);
-        }
-
-        [Obsolete("Use IsInRange(GameObject obj, float range)", false)]
-        public bool InRange(Obj_AI_Base unit, float r = -1)
-        {
-            return IsInRange(unit, r);
-        }
-
-        /// <summary>
         ///     Returns if the GameObject is in range of the spell.
         /// </summary>
         public bool IsInRange(GameObject obj, float range = -1)
@@ -702,6 +676,25 @@ namespace LeagueSharp.Common
         public bool IsInRange(Vector2 point, float range = -1)
         {
             return RangeCheckFrom.To2D().Distance(point, true) < (range < 0 ? RangeSqr : range * range);
+        }
+
+        /// <summary>
+        ///     Returns the best target found using the current TargetSelector mode.
+        ///     Please make sure to set the Spell.DamageType Property to the type of damage this spell does (if not done on
+        ///     initialization).
+        /// </summary>
+        public Obj_AI_Hero GetTarget(float extraRange = 0, IEnumerable<Obj_AI_Hero> champsToIgnore = null)
+        {
+            return TargetSelector.GetTarget(Range + extraRange, DamageType, true, champsToIgnore, From);
+        }
+
+        /// <summary>
+        ///     Spell will be casted on the best target found with the Spell.GetTarget method.
+        /// </summary>
+        public CastStates CastOnBestTarget(float extraRange = 0, bool packetCast = false, bool aoe = false)
+        {
+            var target = GetTarget(extraRange);
+            return target != null ? Cast(target, packetCast, aoe) : CastStates.NotCasted;
         }
     }
 }
